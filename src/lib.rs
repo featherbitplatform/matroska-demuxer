@@ -1,3 +1,4 @@
+// Modified by the featherbit authors; see README.md for the list of changes.
 #![warn(missing_docs)]
 #![deny(clippy::as_conversions)]
 #![deny(clippy::panic)]
@@ -1494,9 +1495,22 @@ impl<R: Read + Seek> MatroskaFile<R> {
         )?;
 
         if let Some(cue_points) = cue_points.as_mut() {
-            cue_points
-                .iter_mut()
-                .for_each(|p| p.track_position.cluster_position += segment_data_offset);
+            // featherbit: upstream 0.8.1 used `+=`, which panics in debug builds (and wraps in
+            // release builds) on a hostile cluster position. Cue points whose sum overflows are
+            // dropped instead.
+            cue_points.retain_mut(|p| {
+                match p
+                    .track_position
+                    .cluster_position
+                    .checked_add(segment_data_offset)
+                {
+                    Some(position) => {
+                        p.track_position.cluster_position = position;
+                        true
+                    }
+                    None => false,
+                }
+            });
         }
 
         let chapters = try_parse_top_element_collection::<_, EditionEntry>(
@@ -1717,16 +1731,37 @@ impl<R: Read + Seek> MatroskaFile<R> {
 
             if let Some(point) = cue_points.get(seek_pos) {
                 if point.time <= seek_timestamp {
-                    let mut target_offset = point.track_position.cluster_position;
+                    let cluster_position = point.track_position.cluster_position;
+                    let relative_position = point.track_position.relative_position;
 
-                    if let Some(relative_position) = point.track_position.relative_position {
-                        let (cluster_data_offset, cluster_timestamp) =
-                            self.get_cluster_offset_and_timestamp(cluster_start)?;
+                    let Some(relative_position) = relative_position else {
+                        return Ok(cluster_position);
+                    };
+
+                    // featherbit: upstream 0.8.1 read the FIRST cluster of the segment
+                    // (`cluster_start`) here and added the relative position to its data
+                    // offset, which lands in the wrong place for every cue but the first.
+                    // The relative position is relative to the cue's own cluster, so read
+                    // that one. Cue values come from the file, so they are not trusted:
+                    // - if the cue does not point at a readable cluster, fall through to the
+                    //   linear search below, as if there were no usable cue;
+                    // - if the relative position is outside a cluster of known size, or the sum
+                    //   overflows, use the cluster start and let the narrow phase walk forward.
+                    if let Ok((cluster_data_offset, cluster_size, cluster_timestamp)) =
+                        self.get_cluster_offset_and_timestamp(cluster_position)
+                    {
                         self.cluster_timestamp = cluster_timestamp;
-                        target_offset = cluster_data_offset + relative_position;
+                        let in_cluster =
+                            cluster_size == u64::MAX || relative_position < cluster_size;
+                        let target_offset = if in_cluster {
+                            cluster_data_offset
+                                .checked_add(relative_position)
+                                .unwrap_or(cluster_position)
+                        } else {
+                            cluster_position
+                        };
+                        return Ok(target_offset);
                     }
-
-                    return Ok(target_offset);
                 }
             }
         };
@@ -1845,15 +1880,16 @@ impl<R: Read + Seek> MatroskaFile<R> {
         }
     }
 
-    fn get_cluster_offset_and_timestamp(&mut self, cluster_start: u64) -> Result<(u64, u64)> {
-        let (offset, _) = expect_master(&mut self.file, ElementId::Cluster, Some(cluster_start))?;
+    fn get_cluster_offset_and_timestamp(&mut self, cluster_start: u64) -> Result<(u64, u64, u64)> {
+        let (offset, size) =
+            expect_master(&mut self.file, ElementId::Cluster, Some(cluster_start))?;
         loop {
             match next_element(&mut self.file) {
                 Ok((element_id, element_data)) => match element_id {
                     // Check the timestamp and seek to the next cluster if we haven't overshoot yet.
                     ElementId::Timestamp => {
                         return if let ElementData::Unsigned(timestamp) = element_data {
-                            Ok((offset, timestamp))
+                            Ok((offset, size, timestamp))
                         } else {
                             Err(DemuxError::UnexpectedDataType)
                         }
