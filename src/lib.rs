@@ -1786,7 +1786,11 @@ impl<R: Read + Seek> MatroskaFile<R> {
                             self.file.seek(SeekFrom::Start(offset))?;
                             last_cluster_offset = current_cluster_offset;
                             current_cluster_offset = offset;
-                            next_cluster_offset = offset + size;
+                            // featherbit: upstream 0.8.1 used `offset + size` (panics in debug builds
+                            // on overflow). Overflow is now an error.
+                            next_cluster_offset = offset
+                                .checked_add(size)
+                                .ok_or(DemuxError::InvalidEbmlDataSize)?;
                         } else {
                             return Err(DemuxError::UnexpectedDataType);
                         }
@@ -1852,7 +1856,12 @@ impl<R: Read + Seek> MatroskaFile<R> {
                             match timestamp {
                                 t if t < seek_timestamp => {
                                     // Jump to the next element.
-                                    self.file.seek(SeekFrom::Start(offset + size))?;
+                                    // featherbit: upstream 0.8.1 used `offset + size`, which panics in debug
+                                    // builds on a block of unknown size (0xFF). Overflow is now an error.
+                                    let block_end = offset
+                                        .checked_add(size)
+                                        .ok_or(DemuxError::InvalidBlockSize)?;
+                                    self.file.seek(SeekFrom::Start(block_end))?;
                                 }
                                 _ => {
                                     // We found the first element after the seeked timestamp.

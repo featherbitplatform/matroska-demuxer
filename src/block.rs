@@ -1,9 +1,9 @@
+// Modified by the featherbit authors; see README.md for the list of changes.
 //! Parses blocks inside a Matroska file.
 use std::{
     collections::VecDeque,
     convert::{TryFrom, TryInto},
     io::{Read, Seek},
-    ops::Add,
 };
 
 use crate::{
@@ -251,7 +251,12 @@ fn parse_timestamp<R: Read + Seek>(r: &mut R, cluster_timestamp: u64) -> Result<
 
     let abs: u64 = timestamp.abs().try_into()?;
     let timestamp = if timestamp.is_positive() {
-        cluster_timestamp.add(abs)
+        // featherbit: upstream 0.8.1 used `cluster_timestamp.add(abs)`, which panics in debug
+        // builds (and wraps in release builds) when the cluster timestamp is near u64::MAX.
+        // Overflow is now an error.
+        cluster_timestamp
+            .checked_add(abs)
+            .ok_or(DemuxError::InvalidBlockSize)?
     } else {
         cluster_timestamp.saturating_sub(abs)
     };
