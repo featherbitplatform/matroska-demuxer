@@ -1,11 +1,14 @@
+# Modified by the featherbit authors; see README.md for the list of changes.
 [package]
 name = "matroska-demuxer"
-version = "0.8.1"
+version = "0.8.1+featherbit.1"
 authors = ["Nils Hasenbanck <nils@hasenbanck.de>"]
 description = "A demuxer that can demux Matroska and WebM container files."
 license = "Zlib OR MIT OR Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/hasenbanck/matroska-demuxer"
+repository = "https://github.com/featherbitplatform/matroska-demuxer"
+homepage = "https://github.com/featherbitplatform/matroska-demuxer"
+publish = false
 categories = ["multimedia"]
 keywords = ["matroska", "webm", "demuxer", "demux"]
 edition = "2021"
