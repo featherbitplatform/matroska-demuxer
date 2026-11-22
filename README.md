@@ -6,10 +6,10 @@ This is a fork of `matroska-demuxer` 0.8.1 by Nils Hasenbanck, kept for featherb
 
 ```toml
 [patch.crates-io]
-matroska-demuxer = { git = "https://github.com/featherbitplatform/matroska-demuxer", rev = "<full commit sha>" }
+matroska-demuxer = { git = "https://github.com/featherbitplatform/matroska-demuxer", tag = "v0.8.1+featherbit.1" }
 ```
 
-Pin the newest commit on `main`.
+Each fork release is tagged `v<upstream version>+featherbit.<n>`, and consumers pin the newest tag.
 
 ## Origin
 
@@ -28,6 +28,10 @@ Pin the newest commit on `main`.
    - After: `checked_add`; overflow returns `DemuxError::InvalidEbmlDataSize` (cluster) or `DemuxError::InvalidBlockSize` (block offset and timestamp).
    - Regression tests: `tests/checked_arithmetic.rs`.
 3. `Cargo.toml`: version `0.8.1+featherbit.1`, `repository` and `homepage` point at this fork, `publish = false`. The package name stays `matroska-demuxer` so it can replace the crates.io crate through `[patch.crates-io]`. This README section was added.
+
+## Releasing
+
+After a change, tag `main` with an annotated tag of the form `v<upstream version>+featherbit.<n>`.
 
 ## Version scheme
 
